@@ -1,0 +1,8 @@
+authsecret: 'acb4454987?&%^%$CD01234cef'
+database:
+  username: 'spinserver'
+  password: '0880'
+  host: 'localhost'
+  port: 27017
+  databaseName: 'spincent'
+models: 'user'
