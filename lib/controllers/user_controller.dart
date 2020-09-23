@@ -5,14 +5,14 @@ import 'package:mongoserver/controllers/model_controller.dart';
 class UserController extends ModelController {
   final Request request;
   UserController(Map<String, dynamic> context, this.request)
-      : super(context, request, model: 'user', modelTypeMap: User.typeMap);
+      : super(context, request, model: User());
 
   @override
-  Future<Response> route(String id) async {
+  Future<Response> routePath(String id) async {
     String method = request.method;
     if (method == 'Get') {
       return await super.get('user', id);
     }
-    return await super.route(request.url.path);
+    return await super.routePath(request.url.path);
   }
 }

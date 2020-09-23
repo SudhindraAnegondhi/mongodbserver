@@ -5,72 +5,17 @@ import 'package:mongoserver/mongoserver.dart';
 import 'package:shelf/shelf.dart';
 import 'package:mongoserver/utils/utils.dart';
 
-enum OpCode {
-  all, // expect fieldname, list values -> sb
-  and, // expect selector builder (other) -> sb
-  comment, // expect str, returns selectorbuilder (sb)
-  eq, // expect fieldname, value -> sb
-  excludeFields, // expect List<String> fields -> sb
-  exists, // expect fieldname -> sb
-  explain, // expect nothing -> sb
-  fields, // expect List<String> fields -> sb
-  getQueryString, // expect callback function -> string
-  gt, // expect fieldname, value -> sb
-  gte, // expect fieldname, value -> sb
-  hint, // expect fieldname, bool (descending false) -> sb
-  hintIndex, // expect indexname -> sb
-  id, // objectid value -> sb,
-  inRange, // expecct fieldname, min, max, bool mininclude (true), bool maxinclude (false) -> rb
-  jsQuery, // expect javescript code -> sb
-  limit, // expect int -> sb
-  lt, // expect fieldname, value -> sb
-  lte, // expect fieldname, value -> sb
-  match, // expect fieldName, String pattern, {bool multiLine, bool caseInsensitive, bool dotAll, bool extended} → sb
-  metaTextScore, // expect fieldname -> sb
-  mod, // expect fieldname, int -> sb
-  ne, // expect fieldname, value -> sb
-  near, // expect  fieldName, dynamic value, [double maxDistance] -> sb
-  nin, // expect fieldname, list values -> sb
-  notExists, // expect fieldname -> sb
-  oneFrom, // expect fieldname, list values -> sb
-  or, // or filters -> sb
-  raw, // map<string, dynamic> -> sb
-  returnKey, // expect nothing -> sb
-  showDiskLoc, // expect nothing -> sb
-  skip, // expect int, -> sb
-  snapshot, // expect nothing -> sb
-  sortBy, // expect fieldname, bool descending false -> sb
-  sortByMetaTextScore, // expect fieldname -> sb
-  within, // expect fieldname, value -> sb
-
-}
-
-OpCode stringToOpCode(String value) {
-  for (int i = 0; i < OpCode.values.length; i++) {
-    if (value.toLowerCase() == describeEnum(OpCode.values[i]).toLowerCase()) {
-      return OpCode.values[i];
-    }
-  }
-  return null;
-}
-
-String describeEnum(Object enumEntry) {
-  final String description = enumEntry.toString().replaceAll('_', '.');
-  final int indexOfDot = description.indexOf('.');
-  assert(indexOfDot != -1 && indexOfDot < description.length - 1);
-  return description.substring(indexOfDot + 1);
-}
-
+/// [Query] handles all database interactions
+///
+/// [get] operations can include [filters]
+///
 class Query {
   final context;
   final String collectionName;
-  String model;
-  Map<String, dynamic> modelTypeMap;
+  dynamic model;
   DbCollection dbCollection;
   Db db;
-  Query(this.context, this.collectionName)
-      : model = context['model'],
-        modelTypeMap = context['modelTypeMap'] ?? {} {
+  Query(this.context, this.collectionName) : model = context['model'] {
     db = context['db'];
     dbCollection = db.collection(collectionName);
   }
@@ -105,6 +50,11 @@ class Query {
     }
   }
 
+  /// find One
+  /// use a unique key
+  /// query may return more than one item if the key is not unique
+  ///
+
   Future<Response> findOne(String key, dynamic value) async {
     final sb = selectorBuilder([
       {'opCode': OpCode.eq, 'fieldname': key, 'value': value},
@@ -117,9 +67,13 @@ class Query {
     return Response.notFound('$key not found');
   }
 
+  /// find all/Search items
+  /// Search/query parameters from the request url path
+  /// need to be in a specific format
+
   Future<Response> find(Map<String, String> queryParameters) async {
     SelectorBuilder sb;
-    if (queryParameters != null) {
+    if (queryParameters.isNotEmpty) {
       sb = _buildQuery(queryParameters);
       if (sb == null) {
         return returnError('Error in parameters, please check server logs');
@@ -137,14 +91,74 @@ class Query {
     return Response.notFound('No records found');
   }
 
-  Future<void> close() async {
-    if (db == null) {
-      return;
+  // put
+  Future<Response> save(Map<String, dynamic> document) async {
+    final result = await dbCollection.save(document);
+    if (result['ok'] != 1) {
+      return returnError('Update failed: ${result.toString()}');
     }
+    return Response.ok('Updated');
+  }
+
+  // patch
+
+  /// Update(Patch) method is used to perform field level
+  /// updates.
+  ///
+  /// flags: upsert will insert if document not found
+  Future<Response> update(
+    Map<String, dynamic> document,
+    Map<String, String> queryParameters, {
+    bool upsert = false,
+    bool multiUpdate = false,
+  }) async {
+    final sb = _buildQuery(queryParameters);
+    if (sb == null) {
+      return returnError('Error in parameters, please check server logs');
+    }
+    final result = await dbCollection.update(
+      sb,
+      document,
+      upsert: upsert,
+      multiUpdate: multiUpdate,
+    );
+    if (result['ok'] != 1) {
+      return returnError('Update failed: ${result.toString()}');
+    }
+    return Response.ok('Updated');
+  }
+
+  Future<void> close() async {
     await db.close();
   }
 
+  String makeHexString(String str) {
+    StringBuffer stringBuffer = new StringBuffer();
+    final byteList = utf8.encode(str);
+    for (final byte in byteList) {
+      if (byte < 16) {
+        stringBuffer.write("0");
+      }
+      stringBuffer.write(byte.toRadixString(16));
+    }
+    return stringBuffer.toString().toLowerCase();
+  }
+
   /// query parameters:
+  /// Query parameters are recieved as part of reqular URL path
+  /// to get records with username 'xan' or all records with
+  /// isAdmin flag set to false
+  /// the query parameters would be:
+  /// username=xan&&or=&&isAdmin=true
+  /// the '=' is ignored. The actual operators - see enum OpCode
+  /// can be appended to the fieldname: for example to retrieve
+  /// all records with salary greater than 500 in Pune, Mysore and
+  /// Jammu:
+  ///
+  /// salary.gt=500&&city.within=Pune,Mysore,Jammu
+  ///
+  /// [Fetch limit] can be set by
+  /// limit=50
   ///
   SelectorBuilder _buildQuery(Map<String, String> queryParameters) {
     List<Map<String, String>> groupQueries = [];
@@ -262,16 +276,16 @@ class Query {
               error += '$key should have min,max values';
               break;
             }
-            min = modelTypeMap == null
+            min = model == null || model.typeMap == null
                 ? _guessType(values[0])
                 : _typedValue(fieldname, values[0]);
-            max = modelTypeMap == null
+            max = model == null || model.typeMap == null
                 ? _guessType(values[1])
                 : _typedValue(fieldname, values[1]);
             break;
           default:
             if (value != null) {
-              if (modelTypeMap[fieldname] != null) {
+              if (model != null && model.typeMap[fieldname] != null) {
                 typedValue = _typedValue(fieldname, value);
               } else {
                 typedValue = _guessType(value);
@@ -305,8 +319,8 @@ class Query {
   }
 
   dynamic _typedValue(String fieldname, dynamic value) {
-    if (modelTypeMap.containsKey(fieldname)) {
-      switch (modelTypeMap[fieldname]) {
+    if (model.typeMap.containsKey(fieldname)) {
+      switch (model?.typeMap[fieldname]) {
         case 'bool':
           return value == 'true';
         case 'int':
@@ -442,4 +456,58 @@ class Query {
     }
     return sb;
   }
+}
+
+enum OpCode {
+  all, // expect fieldname, list values -> sb
+  and, // expect selector builder (other) -> sb
+  comment, // expect str, returns selectorbuilder (sb)
+  eq, // expect fieldname, value -> sb
+  excludeFields, // expect List<String> fields -> sb
+  exists, // expect fieldname -> sb
+  explain, // expect nothing -> sb
+  fields, // expect List<String> fields -> sb
+  getQueryString, // expect callback function -> string
+  gt, // expect fieldname, value -> sb
+  gte, // expect fieldname, value -> sb
+  hint, // expect fieldname, bool (descending false) -> sb
+  hintIndex, // expect indexname -> sb
+  id, // objectid value -> sb,
+  inRange, // expecct fieldname, min, max, bool mininclude (true), bool maxinclude (false) -> rb
+  jsQuery, // expect javescript code -> sb
+  limit, // expect int -> sb
+  lt, // expect fieldname, value -> sb
+  lte, // expect fieldname, value -> sb
+  match, // expect fieldName, String pattern, {bool multiLine, bool caseInsensitive, bool dotAll, bool extended} → sb
+  metaTextScore, // expect fieldname -> sb
+  mod, // expect fieldname, int -> sb
+  ne, // expect fieldname, value -> sb
+  near, // expect  fieldName, dynamic value, [double maxDistance] -> sb
+  nin, // expect fieldname, list values -> sb
+  notExists, // expect fieldname -> sb
+  oneFrom, // expect fieldname, list values -> sb
+  or, // or filters -> sb
+  raw, // map<string, dynamic> -> sb
+  returnKey, // expect nothing -> sb
+  showDiskLoc, // expect nothing -> sb
+  skip, // expect int, -> sb
+  snapshot, // expect nothing -> sb
+  sortBy, // expect fieldname, bool descending false -> sb
+  sortByMetaTextScore, // expect fieldname -> sb
+  within, // expect fieldname, value -> sb
+}
+OpCode stringToOpCode(String value) {
+  for (int i = 0; i < OpCode.values.length; i++) {
+    if (value.toLowerCase() == describeEnum(OpCode.values[i]).toLowerCase()) {
+      return OpCode.values[i];
+    }
+  }
+  return null;
+}
+
+String describeEnum(Object enumEntry) {
+  final String description = enumEntry.toString().replaceAll('_', '.');
+  final int indexOfDot = description.indexOf('.');
+  assert(indexOfDot != -1 && indexOfDot < description.length - 1);
+  return description.substring(indexOfDot + 1);
 }

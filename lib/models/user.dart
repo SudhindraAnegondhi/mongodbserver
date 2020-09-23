@@ -14,10 +14,15 @@ class User {
   });
 
   static String get primaryKey => 'username';
-  static String get name => 'User';
-  static Map<String, String> typeMap = {
-    'isAdmin': 'bool',
-  };
+  String get name => 'user';
+  Map<String, String> get typeMap => {
+        'isAdmin': 'bool',
+      };
+  List<String> get noUpdate => [
+        'username',
+        'hashedPassword',
+        'salt',
+      ];
   User copyWith({
     String username,
     String hashedPassword,

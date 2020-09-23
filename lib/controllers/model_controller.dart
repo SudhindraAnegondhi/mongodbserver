@@ -23,15 +23,22 @@ class ModelController {
   final Request request;
   final context;
   List<String> models;
-  final String model;
-  ModelController(this.context, this.request,
-      {this.model, Map<String, dynamic> modelTypeMap})
+  final dynamic model;
+  ModelController(this.context, this.request, {this.model})
       : models = context['config'].models.split(',') {
     context['model'] = model;
-    context['modelTypeMap'] = modelTypeMap;
   }
 
-  Future<Response> route(String path) async {
+  Future<Response> routeRequest() async {
+    if (RegExp(r'.*\/.*').hasMatch(request.url.path)) {
+      String collectionName = request.url.path.split('/').first;
+      String id = request.url.path.split('/').last;
+      return await get(collectionName, id);
+    }
+    return await routePath(request.url.path);
+  }
+
+  Future<Response> routePath(String path) async {
     if (!bearerAuthenticate(request)) {
       return Response(HttpStatus.unauthorized, body: 'You are not authorized');
     }
@@ -40,7 +47,7 @@ class ModelController {
     final parts = path?.split('/') ?? null;
 
     String collectionName = model != null
-        ? model
+        ? model.name
         : (parts != null
             ? models.firstWhere((element) => element == parts[0],
                 orElse: () => null)
@@ -52,20 +59,56 @@ class ModelController {
     if (method == 'GET') {
       return await get(collectionName, parts.length == 2 ? parts[1] : null);
     }
+    if (method == 'PUT') {
+      return await save(collectionName, request);
+    }
+    if (method == 'PATCH') {
+      return await patch(collectionName, request);
+    }
     return returnError('$method not supported');
   }
 
-  Future<Response> get(String collection, String id) async {
+  Future<Response> get(String collectionName, String id) async {
     Response response;
     if (id != null) {
       final ObjectId oid = ObjectId.fromHexString(id);
-      response = await Query(context, collection).findOne('_id', oid);
+      response = await Query(context, collectionName).findOne('_id', oid);
     } else {
-      response =
-          await Query(context, collection).find(request.url.queryParameters);
+      response = await Query(context, collectionName)
+          .find(request.url.queryParameters);
     }
 
     return Response(response.statusCode,
         body: json.encode(await response.readAsString()));
+  }
+
+  Future<Response> save(String collectionName, Request request) async {
+    final Map<String, dynamic> document =
+        json.decode(await request.readAsString());
+
+    return await Query(context, collectionName).save(document);
+  }
+
+  Future<Response> patch(
+    String collectionName,
+    Request request,
+  ) async {
+    final Map<String, dynamic> document =
+        json.decode(await request.readAsString());
+
+    final _id = document['_id'];
+    if (model != null) {
+      document.removeWhere((key, value) =>
+          model.noUpdate.contains(key) || !model.typeMap.containsKey(key));
+    }
+    return await Query(context, collectionName).update(
+      document,
+      request.url.hasQuery ? request.url.queryParameters : {'_id': _id},
+      upsert:
+          (request.url.queryParameters.remove('upsert') ?? 'false') == 'true',
+      multiUpdate:
+          (request.url.queryParameters.remove('multiUpdate') ?? 'false') ==
+              'true',
+    );
   }
 }
