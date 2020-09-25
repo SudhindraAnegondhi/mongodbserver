@@ -13,7 +13,7 @@ class User {
     this.isAdmin,
   });
 
-  static String get primaryKey => 'username';
+   String get primaryKey => 'username';
   String get name => 'user';
   Map<String, String> get typeMap => {
         'isAdmin': 'bool',
@@ -23,6 +23,7 @@ class User {
         'hashedPassword',
         'salt',
       ];
+ 
   User copyWith({
     String username,
     String hashedPassword,

@@ -41,6 +41,7 @@ class Application {
     }
     _cache['Application'] =
         Application._getInstance(configurationFilePath, port, address);
+
     return _cache['Application'];
   }
 
@@ -55,11 +56,22 @@ class Application {
         : await InternetAddress.lookup(config.address ?? options.address);
     final database = Database(config);
     db = await database.open();
-    final service = Service(context());
+    final service = Service(context(), modifyContext);
 
-    server = await io.serve(service.handler,
-        address is List ? address[0] : address, config.port ?? options.port);
+     server = await io.serve(service.handler,
+       address is List ? address[0] : address, config.port ?? options.port);
+   
   }
 
-  
+  void modifyContext(String component, String key, dynamic item) {
+    switch (component) {
+      case 'config':
+        if (key == 'model') {
+          config.addModel(item);
+        }
+        break;
+      case 'options':
+        break;
+    }
+  }
 }

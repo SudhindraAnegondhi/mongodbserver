@@ -15,7 +15,8 @@ class RegisterController {
       returnError('Body is missing',
           statusCode: HttpStatus.internalServerError);
     }
-    // TODO: implement basic authorization to pass username and password
+    // ignore: todo
+    // TODO implement basic authorization to pass username and password
     final params =
         json.decode(await request.readAsString()) as Map<String, dynamic>;
 
@@ -31,7 +32,19 @@ class RegisterController {
     );
     user.salt = generateRandomSalt();
     user.hashedPassword = hashPassword(params['password'], user.salt);
-    return Query(context, 'user').insert(user.toMap(), id: User.primaryKey);
+    Response response;
+    response =
+        await Query(context, 'user').insert(user.toMap(), id: User().primaryKey);
+    if (response.statusCode != HttpStatus.ok) {
+      return response;
+    }
+    response =
+        await Query(context, 'user').findOne(User().primaryKey, user.username);
+    if (response.statusCode != HttpStatus.ok) {
+      return response;
+    }
+    return Response(HttpStatus.ok,
+        body: json.encode(await response.readAsString()));
   }
 }
 

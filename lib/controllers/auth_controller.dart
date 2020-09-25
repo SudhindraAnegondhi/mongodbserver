@@ -11,34 +11,38 @@ class AuthController {
   AuthController(this.context, this.request);
 
   Future<Response> login({bool isAdmin = false}) async {
+    Response response;
     if ((request.contentLength ?? -1) < 0) {
       returnError('Body is missing',
           statusCode: HttpStatus.internalServerError);
     }
-    // TODO: implement basic authorization to pass username and password
+
     final params =
         json.decode(await request.readAsString()) as Map<String, dynamic>;
 
     if (params['username'] == null || params['password'] == null) {
       return returnError('username, password is required');
     }
-  
-    final Response response = await Query(context, 'user')
-        .findOne(User.primaryKey, params['username']);
+
+    response = await Query(context, 'user')
+        .findOne(User().primaryKey, params['username']);
     if (response.statusCode != HttpStatus.ok) {
       return returnError('Authentication failed');
     }
-    final user = User.fromMap(
-        json.decode(await response.readAsString()) as Map<String, dynamic>);
+    final userMap =  json.decode(await response.readAsString()) as Map<String, dynamic>;
+    final user = User.fromMap(userMap);
     final hashedPassword = hashPassword(params['password'], user.salt);
     if (hashedPassword != user.hashedPassword) {
       return returnError('Authentication failed - 02');
     }
-  
+    userMap.remove('salt');
+    userMap.remove('hashedPassword');
 
-    String token = jwtToken();
-
-    return Response(HttpStatus.ok, body: token);
+    final body = json.encode({
+      'token': jwtToken(user.isAdmin),
+      'user': userMap,
+    });
+    
+    return Response(HttpStatus.ok, body: body);
   }
 }
-

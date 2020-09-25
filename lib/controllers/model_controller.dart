@@ -59,8 +59,11 @@ class ModelController {
     if (method == 'GET') {
       return await get(collectionName, parts.length == 2 ? parts[1] : null);
     }
+    if (method == 'POST') {
+      return await post(collectionName, request);
+    }
     if (method == 'PUT') {
-      return await save(collectionName, request);
+      return await put(collectionName, request);
     }
     if (method == 'PATCH') {
       return await patch(collectionName, request);
@@ -82,7 +85,14 @@ class ModelController {
         body: json.encode(await response.readAsString()));
   }
 
-  Future<Response> save(String collectionName, Request request) async {
+  Future<Response> post(String collectionName, Request request) async {
+    final Map<String, dynamic> document =
+        json.decode(await request.readAsString());
+    return await Query(context, collectionName)
+        .insert(document, id: model.primaryKey);
+  }
+
+  Future<Response> put(String collectionName, Request request) async {
     final Map<String, dynamic> document =
         json.decode(await request.readAsString());
 

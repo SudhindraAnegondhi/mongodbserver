@@ -37,30 +37,34 @@ const _hmacKey = 'FewPeopleFindUseForWithoutTheProperLock';
 const _issuer = 'inspironsudhindra';
 const _audienceDomain = 'clients.spincent.com';
 
-String jwtToken() {
+String jwtToken(bool isAdmin) {
+  Map<String, Object> otherClaims = {'isAdmin': isAdmin};
   final claimSet = JwtClaim(
     subject: 'drtmgdbsrvr',
     issuer: '$_issuer',
     audience: <String>[_audienceDomain],
     expiry: DateTime.now().add(Duration(hours: 24)),
     issuedAt: DateTime.now(),
+    payload: otherClaims,
   );
 
   return issueJwtHS256(claimSet, _hmacKey);
 }
 
-bool validateJwtToken(String token) {
+bool validateJwtToken(String token, bool isAdmin) {
   try {
     final JwtClaim declaimSet = verifyJwtHS256Signature(token, _hmacKey);
-    declaimSet.validate(
-        issuer: _issuer, audience: _audienceDomain);
+    declaimSet.validate(issuer: _issuer, audience: _audienceDomain);
+    if (isAdmin != null && isAdmin) {
+      return declaimSet.payload['isAdmin'];
+    }
     return true;
   } on JwtException {
     return false;
   }
 }
 
-bool bearerAuthenticate(Request request,) {
+bool bearerAuthenticate(Request request, {bool isAdmin = false}) {
   final headers = request.headers;
   if (headers['Authorization'] == null) {
     return false;
@@ -69,7 +73,7 @@ bool bearerAuthenticate(Request request,) {
   if (tokens == null || tokens.length != 2 || tokens[0] != 'Bearer') {
     return false;
   }
-  return validateJwtToken(tokens[1]);
+  return validateJwtToken(tokens[1], isAdmin);
 }
 
 ///
