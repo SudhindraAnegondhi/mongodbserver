@@ -20,8 +20,27 @@ class Query {
     dbCollection = db.collection(collectionName);
   }
 
+  Future<bool> collectionExists() async {
+    final collections = await db.getCollectionNames();
+    return collections.contains(collectionName);
+  }
+
   Future<void> open() async {
     await db.open();
+  }
+
+  Future<Response> createIndex(Map<String, dynamic> index) async {
+    final response = await db.createIndex(
+      collectionName,
+      name: index['name'],
+      keys: Map<String, dynamic>.from(index['keys']),
+      unique: index['unique'],
+      partialFilterExpression: index['partialFilterExpression'],
+    );
+    if (response['ok'] == 1) {
+      return Response.ok('Index ${index['name']} created.');
+    }
+    return returnError('Index ${index['name']} creation failed');
   }
 
   Future<Response> insert(Map<String, dynamic> document, {String id}) async {
@@ -50,12 +69,27 @@ class Query {
     }
   }
 
+  Future<Response> insertAll(List<Map<String, dynamic>> documents) async {
+    try {
+      final response = await dbCollection.insertAll(documents);
+      if (response['ok'] == 1.0)
+        return Response.ok({"count": documents.length});
+      else
+        return Response(HttpStatus.conflict, body: 'error: insert failed');
+    } catch (e) {
+      return returnError(e.message);
+    }
+  }
+
   /// find One
   /// use a unique key
   /// query may return more than one item if the key is not unique
   ///
 
   Future<Response> findOne(String key, dynamic value) async {
+    if (!await collectionExists()) {
+      return Response.notFound('$collectionName not found');
+    }
     final sb = selectorBuilder([
       {'opCode': OpCode.eq, 'fieldname': key, 'value': value},
     ]);
@@ -67,12 +101,32 @@ class Query {
     return Response.notFound('$key not found');
   }
 
+  Future<Response> count(Map<String, String> queryParameters) async {
+    SelectorBuilder sb;
+    queryParameters.remove('${dbCollection.collectionName}.count');
+    if (queryParameters.isNotEmpty) {
+      sb = _buildQuery(queryParameters);
+      if (sb == null) {
+        return returnError('Error in parameters, please check server logs');
+      }
+    }
+    final count = await dbCollection.count(sb);
+    return Response.ok(json.encode(count.toString()));
+  }
+
   /// find all/Search items
   /// Search/query parameters from the request url path
   /// need to be in a specific format
 
   Future<Response> find(Map<String, String> queryParameters) async {
     SelectorBuilder sb;
+    if (!await collectionExists()) {
+      return Response.notFound('$collectionName not found');
+    }
+    if ((queryParameters?.containsKey('${dbCollection.collectionName}.count') ??
+        false)) {
+      return await count(queryParameters);
+    }
     if (queryParameters.isNotEmpty) {
       sb = _buildQuery(queryParameters);
       if (sb == null) {
@@ -80,13 +134,19 @@ class Query {
       }
     }
 
-    final found = await dbCollection.find(sb == null ? null : sb);
+    final found = await dbCollection.find(sb);
     if (found != null) {
       final List<Map<String, dynamic>> records = [];
-      await found.forEach((element) {
-        records.add(element);
-      });
-      return Response(HttpStatus.ok, body: json.encode(records));
+      try {
+        await found.forEach((element) {
+          records.add(element);
+        });
+      } catch (e) {
+        return Response(HttpStatus.expectationFailed, body: json.encode(e));
+      }
+      if (records.length > 0) {
+        return Response(HttpStatus.ok, body: json.encode(records));
+      }
     }
     return Response.notFound('No records found');
   }
@@ -126,6 +186,18 @@ class Query {
       return returnError('Update failed: ${result.toString()}');
     }
     return Response.ok('Updated');
+  }
+
+  Future<Response> delete(Map<String, String> queryParameters) async {
+    final sb = _buildQuery(queryParameters);
+    if (sb == null) {
+      return returnError('Error in parameters, please check server logs');
+    }
+    final result = await dbCollection.remove(sb);
+    if (result['ok'] != 1) {
+      return returnError('Delete failed: ${result.toString()}');
+    }
+    return Response.ok('Deleted ${result['ok']} records');
   }
 
   Future<void> close() async {
@@ -210,10 +282,11 @@ class Query {
         String indexname;
         String min;
         String max;
-        String
-            code; // = keys.length == 1 && (code == 'or' || code == 'and') ? key ?
+        String minInclude;
+        String maxInclude;
+        String code;
         if (keys.length == 1) {
-          if (key == 'or' || key == 'and') {
+          if (['or', 'and', 'limit', 'skip'].contains(key)) {
             code = key;
           }
         } else {
@@ -223,16 +296,20 @@ class Query {
         final opCode = code != null ? stringToOpCode(code) : OpCode.eq;
         if (opCode == null) {
           //return returnError('${key.split('.')[1]} is not a filter opCode');
-          error = '$key is not a filter opCode';
+          error = '$key  not a  valid filter opCode';
         }
         dynamic typedValue;
         switch (opCode) {
+          case OpCode.all:
           case OpCode.excludeFields:
           case OpCode.fields:
           case OpCode.nin:
           case OpCode.oneFrom:
-            // list is implemented as comma separated values
+            // value must contain a List
+            /* list is implemented as comma separated values
             typedValue = value.split(',');
+            */
+            typedValue = json.decode(value);
             break;
           case OpCode.or:
             fieldname = null;
@@ -271,6 +348,23 @@ class Query {
             typedValue = ObjectId.fromHexString(value);
             break;
           case OpCode.inRange:
+            final values = Map<String, dynamic>.from(json.decode(value));
+
+            if (values['min'] == null || values['max'] == null) {
+              error += '$key should have min,max values';
+              break;
+            }
+
+            min = model == null || model.typeMap == null
+                ? _guessType(values['min'])
+                : _typedValue(fieldname, values['min']);
+            max = model == null || model.typeMap == null
+                ? _guessType(['max'])
+                : _typedValue(fieldname, values['max']);
+            minInclude = values['minInclude']?.toString() ?? 'false';
+            maxInclude = values['maxInclude']?.toString() ?? 'false';
+
+            /*
             final values = value.split(',');
             if (values.length != 2) {
               error += '$key should have min,max values';
@@ -282,6 +376,8 @@ class Query {
             max = model == null || model.typeMap == null
                 ? _guessType(values[1])
                 : _typedValue(fieldname, values[1]);
+                
+            */
             break;
           default:
             if (value != null) {
@@ -299,6 +395,8 @@ class Query {
           'indexname': indexname,
           'min': min,
           'max': max,
+          'mininclude': minInclude,
+          'maxinclude': maxInclude,
         });
       }
     });

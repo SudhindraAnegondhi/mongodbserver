@@ -5,13 +5,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "mongoserver",
-      "request": "launch",
+      "name": "Dart",
       "type": "dart",
+      "request": "launch",
+      "program": "bin/main.dart",
       "args": [
-        "serve",
+        "serve"
       ]
     }
   ]
 }
-

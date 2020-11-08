@@ -21,6 +21,8 @@ class Application {
   Function entryPoint;
   HttpServer server;
   Db db;
+  Map<String, dynamic> state = {};
+
   static final Map<String, Application> _cache = <String, Application>{};
   static Map<String, dynamic> context() {
     if (_cache.containsKey('Application')) {
@@ -29,6 +31,7 @@ class Application {
         'options': app.options,
         'config': app.config,
         'db': app.db,
+        'state': app.state,
       };
     }
     return {};
@@ -58,9 +61,10 @@ class Application {
     db = await database.open();
     final service = Service(context(), modifyContext);
 
-     server = await io.serve(service.handler,
-       address is List ? address[0] : address, config.port ?? options.port);
-   
+    // Load routes in to context
+
+    server = await io.serve(service.withLog,
+        address is List ? address[0] : address, config.port ?? options.port);
   }
 
   void modifyContext(String component, String key, dynamic item) {
@@ -68,6 +72,12 @@ class Application {
       case 'config':
         if (key == 'model') {
           config.addModel(item);
+        }
+        break;
+      case 'route':
+        if (key == 'routes') {
+          // item = Map<String, dynamic> route name, model instance ?? null
+          state['routes'] = item;
         }
         break;
       case 'options':

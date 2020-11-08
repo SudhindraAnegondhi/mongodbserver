@@ -1,16 +1,14 @@
 import 'package:args/args.dart';
+
 import 'package:mongoserver/mongoserver.dart';
 import 'package:mongoserver/base/application.dart';
-import 'package:mongoserver/base/schema.dart';
 
 Future main(List<String> arguments) async {
   final results = parseArgs(arguments);
   if (results.command.name == 'serve') {
     serve();
   }
-  if (results.command.name == "schema") {
-    schema(results);
-  }
+ 
 }
 
 ArgResults parseArgs(List<String> arguments) {
@@ -20,6 +18,7 @@ ArgResults parseArgs(List<String> arguments) {
   parser.addOption('modify',
       abbr: 'm', help: 'Json string of the model schema to be modified');
   parser.addOption('drop', abbr: 'd', help: 'model name to be dropped');
+  parser.addOption('file', abbr: 'f', help: 'schema file');
   parser.addCommand('serve', command);
   parser.addCommand('schema', command);
   return parser.parse(arguments);

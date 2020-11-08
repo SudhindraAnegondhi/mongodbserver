@@ -1,0 +1,22 @@
+{
+  "collectionName": "Widget",
+  "primaryKey": "widgetname",
+  "foreignKeys": { "product_id": "products", "supplier_id": "supplier" },
+  "index": {"widgetProduct": "productId.asc", "wdigetSupplier": "supplierid"},
+  "noUpdate": ["widgetname", "product_id", "supplier_id"],
+  "dateFields": ["/lastUsed"],
+  "fields": {
+    "widgetName": "xxx xx",
+    "productId": "addfdf12",
+    "supplierId": "adnfdfd",
+    "description": "xxxx",
+    "assemblyCode": "adfdfdfd",
+    "quantityInStock": 24,
+    "quantityOnOrder": 200,
+    "price": 2987.56,
+    "lastUsed": 454545008,
+    "models": ["xxx", "dfdfd", "cccc"],
+    "hasSubstitutes": false,
+    "bomLink": "https://bom.acme.dfut/xxx%20xx"
+  }
+}

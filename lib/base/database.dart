@@ -3,7 +3,7 @@ import 'package:mongoserver/base/app_configuration.dart';
 
 class Database {
   final AppConfiguration config;
-  var db;
+  Db db;
   Database(this.config);
 
   Future<Db> open() async {
@@ -20,6 +20,11 @@ class Database {
       }
     }
     return db;
+  }
+
+  Future<bool> exists(String collection) async {
+    final collections = await db.getCollectionNames();
+    return collections.contains(collection);
   }
 
   Future<void> close() async {
